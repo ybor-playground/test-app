@@ -2,6 +2,17 @@
 
 Hello World CRUD app built with FastAPI, PostgreSQL, and Azure Blob Storage.
 
+## Features
+
+- **CRUD API** -- create, list, get, update, and delete items via REST endpoints
+- **CSV export** -- dump all items to Azure Blob Storage as a timestamped CSV
+- **PostgreSQL** -- async SQLAlchemy with asyncpg, configurable connection pooling, and pool pre-ping
+- **Azure Blob Storage** -- dual-mode auth (Azurite credentials for local dev, `DefaultAzureCredential` for production)
+- **Health probes** -- Kubernetes-ready liveness (`/healthz`) and readiness (`/readyz`, validates DB connectivity)
+- **Structured logging** -- JSON output via structlog
+- **Environment config** -- all settings from environment variables or `.env` via Pydantic Settings
+- **Lifecycle management** -- auto-creates tables on startup, disposes engine on shutdown
+
 ## Endpoints
 
 | Method | Path | Description |
