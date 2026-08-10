@@ -97,10 +97,18 @@ curl -X POST http://localhost:8000/items/dump
 ### 5. Verify the blob was written
 
 ```bash
+# List blobs in the exports container
 az storage blob list -c exports \
   --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1" \
   --output table
+
+# Download and print the CSV to stdout (replace the blob name with the one from the dump response)
+az storage blob download -c exports -n dumps/items_<timestamp>.csv \
+  --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1" \
+  --file -
 ```
+
+You should see a CSV with columns `id`, `name`, `description`, `created_at` and one row per item you created in step 4.
 
 ### Swagger UI
 
