@@ -32,8 +32,10 @@ Hello World CRUD app built with FastAPI, PostgreSQL, and Azure Blob Storage.
 brew services start postgresql@16
 createdb test_app
 
-# Azurite (Azure Blob emulator)
-docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite
+# Azurite (Azure Blob emulator) — --skipApiVersionCheck avoids
+# errors when the SDK's API version is newer than Azurite supports
+docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite \
+  azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
 
 # Create the blob container in Azurite
 az storage container create -n exports \
@@ -154,7 +156,8 @@ The account name and key are hardcoded defaults that ship with every Azurite ins
 docker run -d --name azurite mcr.microsoft.com/azure-storage/azurite
 
 # Correct — maps host port 10000 to container port 10000
-docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite
+docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite \
+  azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
 ```
 
 To verify ports are mapped, check `docker ps` output — you should see `0.0.0.0:10000->10000/tcp`, not just `10000-10002/tcp`.
@@ -163,8 +166,11 @@ To verify ports are mapped, check `docker ps` output — you should see `0.0.0.0
 
 ```bash
 docker stop <container_name> && docker rm <container_name>
-docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite
+docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite \
+  azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck
 ```
+
+**API version mismatch.** If you see `InvalidHeaderValue` / "The API version X is not supported by Azurite", the Python SDK is sending a newer API version than Azurite recognizes. The `--skipApiVersionCheck` flag (included in the Docker commands above) resolves this. If you started Azurite without it, recreate the container with the flag.
 
 **Verify the container was created.** After `az storage container create`, confirm with:
 
