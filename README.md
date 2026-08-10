@@ -144,3 +144,32 @@ az storage container create -n exports \
 | `BlobEndpoint` | `http://localhost:10000/devstoreaccount1` | Where the Blob service is running — port 10000 on your machine |
 
 The account name and key are hardcoded defaults that ship with every Azurite instance. They are not secrets — they are publicly documented by Microsoft and identical across all installations. The app code in `app/blob.py` auto-detects localhost URLs and uses these credentials for local dev, while production uses `DefaultAzureCredential` (managed identity, service principal, etc.).
+
+### Common pitfalls
+
+**Port mapping is required.** When starting Azurite via Docker, you must map port 10000 to the host. Without `-p 10000:10000`, the container runs but localhost can't reach it:
+
+```bash
+# Wrong — no port mapping, localhost:10000 won't connect
+docker run -d --name azurite mcr.microsoft.com/azure-storage/azurite
+
+# Correct — maps host port 10000 to container port 10000
+docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite
+```
+
+To verify ports are mapped, check `docker ps` output — you should see `0.0.0.0:10000->10000/tcp`, not just `10000-10002/tcp`.
+
+**If Docker Desktop was used without port mapping**, stop and remove the container, then recreate it:
+
+```bash
+docker stop <container_name> && docker rm <container_name>
+docker run -d -p 10000:10000 --name azurite mcr.microsoft.com/azure-storage/azurite
+```
+
+**Verify the container was created.** After `az storage container create`, confirm with:
+
+```bash
+az storage container list --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1" --output table
+```
+
+You should see `exports` listed. If no output appears, the create command failed silently — check that Azurite is running with ports mapped.
