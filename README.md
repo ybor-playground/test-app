@@ -116,3 +116,31 @@ All settings are loaded from environment variables (or a `.env` file). See `.env
 | `BLOB_PREFIX` | No | Key prefix for blobs (default: `dumps/`) |
 | `DB_POOL_SIZE` | No | SQLAlchemy connection pool size (default: `5`) |
 | `DB_MAX_OVERFLOW` | No | Max overflow connections (default: `10`) |
+
+## Appendix: Azurite Connection String Explained
+
+The `az storage container create` command used during local setup:
+
+```bash
+az storage container create -n exports \
+  --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://localhost:10000/devstoreaccount1"
+```
+
+### Command breakdown
+
+| Part | What it does |
+|------|-------------|
+| `az storage container create` | Creates a blob container (like a folder/bucket) in Azure Storage |
+| `-n exports` | Names the container `exports` — matches `BLOB_CONTAINER=exports` in `.env` |
+| `--connection-string "..."` | Tells the CLI how to connect to the Azurite emulator |
+
+### Connection string breakdown
+
+| Key | Value | Meaning |
+|-----|-------|---------|
+| `DefaultEndpointsProtocol` | `http` | No TLS — Azurite runs plain HTTP locally |
+| `AccountName` | `devstoreaccount1` | Azurite's well-known default account name |
+| `AccountKey` | `Eby8vdM02x...` | Azurite's well-known default key (same for everyone, not a secret) |
+| `BlobEndpoint` | `http://localhost:10000/devstoreaccount1` | Where the Blob service is running — port 10000 on your machine |
+
+The account name and key are hardcoded defaults that ship with every Azurite instance. They are not secrets — they are publicly documented by Microsoft and identical across all installations. The app code in `app/blob.py` auto-detects localhost URLs and uses these credentials for local dev, while production uses `DefaultAzureCredential` (managed identity, service principal, etc.).
