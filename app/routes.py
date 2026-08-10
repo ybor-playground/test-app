@@ -1,18 +1,35 @@
 import csv
+import io
 from datetime import datetime, timezone
-from pathlib import Path
 from uuid import uuid4
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi.responses import JSONResponse
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.blob import upload_blob
 from app.database import get_db
 from app.models import ItemModel
 from app.schemas import Item, ItemCreate
 
 router = APIRouter()
+log = structlog.get_logger()
+
+
+@router.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+
+@router.get("/readyz")
+async def readyz(db: AsyncSession = Depends(get_db)):
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)
+    return {"status": "ok"}
 
 
 @router.get("/")
@@ -72,17 +89,16 @@ async def dump_items(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(ItemModel))
     items = result.scalars().all()
 
-    dump_dir = Path(settings.blob_store_path)
-    dump_dir.mkdir(parents=True, exist_ok=True)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["id", "name", "description"])
+    for item in items:
+        writer.writerow([item.id, item.name, item.description])
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    filename = f"items_{timestamp}.csv"
-    filepath = dump_dir / filename
+    blob_name = f"items_{timestamp}.csv"
+    blob_url = upload_blob(blob_name, buffer.getvalue())
 
-    with open(filepath, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["id", "name", "description"])
-        for item in items:
-            writer.writerow([item.id, item.name, item.description])
+    log.info("items_dump_completed", blob_url=blob_url, count=len(items))
 
-    return {"file": str(filepath), "count": len(items)}
+    return {"blob_url": blob_url, "count": len(items)}
