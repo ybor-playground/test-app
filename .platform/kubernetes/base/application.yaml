@@ -104,7 +104,7 @@ spec:
     - resourceType: postgresql
       resourceName: test-app-db
       provider: cnpg
-      scope: private
+      scope: Private
       parameters:
         dbName: appdb
         instances: "1"
