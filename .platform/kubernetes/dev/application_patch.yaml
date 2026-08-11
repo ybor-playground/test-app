@@ -1,0 +1,43 @@
+# Dev environment patch for PlatformApplication
+# Variables: test-app, false, false
+#
+# This patch is applied on top of the base application.yaml
+# to configure environment-specific settings for DEV.
+#
+# NOTE: Do NOT hardcode hostnames - the platform auto-generates them
+# based on app name, cluster, and environment context.
+# Format: {app}.aks.{region}.{cloud}.{env}.{org}.p6m.run
+
+apiVersion: meta.p6m.dev/v1alpha1
+kind: PlatformApplication
+metadata:
+  name: test-app
+  labels:
+    p6m.dev/env-name: dev
+    p6m.dev/env-type: dev
+spec:
+  # Dev-specific environment variables
+  config:
+    DEBUG: "true"
+
+  # Ingress settings for dev (inherits from render variables)
+  networking:
+    ingress:
+      enabled: false
+      oidc: false
+
+  # Dev resource allocation (smaller) - uncomment to customize
+  # deployment:
+  #   resources:
+  #     requests:
+  #       cpu: "100m"
+  #       memory: "128Mi"
+  #     limits:
+  #       cpu: "250m"
+  #       memory: "256Mi"
+
+  # Dev autoscaling - uncomment to customize
+  # autoscaling:
+  #   enabled: true
+  #   minReplicas: 1
+  #   maxReplicas: 2
