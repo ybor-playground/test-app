@@ -44,8 +44,8 @@ spec:
   # Driven by detect_secrets_usage's detected_config_vars — Cortex surfaces
   # every env var it inferred so the user can audit before flipping them on.
   config:
-    # Detected by Cortex — uncomment and set values before deploying.
-    BLOB_CONTAINER: "exports"
+    # Detected by Cortex — review values before deploying.
+    BLOB_CONTAINER: ""
     BLOB_PREFIX: "dumps/"
     DB_POOL_SIZE: "5"
     DB_MAX_OVERFLOW: "10"
