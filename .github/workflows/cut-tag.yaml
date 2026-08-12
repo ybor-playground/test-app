@@ -82,6 +82,8 @@ jobs:
 
       - name: Build Python Application
         uses: p6m-actions/python-uv-build@v1
+        with:
+          run-test: "false"
 
       - name: Login to Docker Repository
         uses: p6m-actions/docker-repository-login@v1
