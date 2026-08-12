@@ -45,7 +45,7 @@ spec:
   # every env var it inferred so the user can audit before flipping them on.
   config:
     # Detected by Cortex — uncomment and set values before deploying.
-    # BLOB_CONTAINER: ""
+    BLOB_CONTAINER: "exports"
     BLOB_PREFIX: "dumps/"
     DB_POOL_SIZE: "5"
     DB_MAX_OVERFLOW: "10"
