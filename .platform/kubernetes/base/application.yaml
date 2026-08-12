@@ -11,7 +11,7 @@
 # - CloudFront CDN (if enabled)
 # - CockroachDB database/user (if requested)
 #
-# Variables: test-app, test-app, 8080, /readyz, false, false
+# Variables: test-app, test-app, 8080, /readyz, true, false
 # Blocks:    config_block, secrets_block, mcp_annotations_block, outbound_block, resource_requirements_block
 #
 # Default ports by language:
@@ -32,9 +32,9 @@ metadata:
   # Opt in to expose this service's OpenAPI endpoints as MCP tools. Driven by
   # detect_exposed_endpoints + the user's per-endpoint selection. Exposing all
   # endpoints is discouraged — mcp.p6m.dev/exposed-endpoints scopes it.
-  # annotations:
-  #   mcp.p6m.dev/expose: "true"
-  #   mcp.p6m.dev/exposed-endpoints: "GET /example,POST /example"
+  annotations:
+    mcp.p6m.dev/expose: "true"
+    mcp.p6m.dev/exposed-endpoints: "GET /,GET /items,GET /items/{item_id}"
 spec:
   # ============================================
   # ENVIRONMENT VARIABLES
@@ -46,9 +46,10 @@ spec:
   config:
     # Detected by Cortex — review values before deploying.
     BLOB_CONTAINER: ""
-    BLOB_PREFIX: "dumps/"
-    DB_POOL_SIZE: "5"
-    DB_MAX_OVERFLOW: "10"
+    BLOB_PREFIX: ""
+    DB_POOL_SIZE: ""
+    DB_MAX_OVERFLOW: ""
+    DATABASE_URL: "postgresql+asyncpg://$(TEST_APP_DB_USERNAME):$(TEST_APP_DB_PASSWORD)@$(TEST_APP_DB_HOST):$(TEST_APP_DB_PORT)/$(TEST_APP_DB_DBNAME)"
 
   # ============================================
   # DEPLOYMENT
@@ -136,7 +137,7 @@ spec:
   # ============================================
   networking:
     ingress:
-      enabled: false
+      enabled: true
       oidc: false
       # type: istio
       # hostnames:

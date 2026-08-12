@@ -1,5 +1,5 @@
 # Dev environment patch for PlatformApplication
-# Variables: test-app, false, false
+# Variables: test-app, true, false
 #
 # This patch is applied on top of the base application.yaml
 # to configure environment-specific settings for DEV.
@@ -23,7 +23,7 @@ spec:
   # Ingress settings for dev (inherits from render variables)
   networking:
     ingress:
-      enabled: false
+      enabled: true
       oidc: false
 
   # Dev resource allocation (smaller) - uncomment to customize

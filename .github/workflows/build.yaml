@@ -1,6 +1,6 @@
 # CI workflow: Build & deploy to dev (Python UV)
 # Source of truth: p6m-actions/* action.yml interfaces
-# Variables: test-app, 3.11 
+# Variables: test-app, 3.11
 
 on:
   push:
