@@ -32,9 +32,9 @@ metadata:
   # Opt in to expose this service's OpenAPI endpoints as MCP tools. Driven by
   # detect_exposed_endpoints + the user's per-endpoint selection. Exposing all
   # endpoints is discouraged — mcp.p6m.dev/exposed-endpoints scopes it.
-  annotations:
-    mcp.p6m.dev/expose: "true"
-    mcp.p6m.dev/exposed-endpoints: "GET /,GET /items,GET /items/{item_id}"
+  # annotations:
+  #   mcp.p6m.dev/expose: "true"
+  #   mcp.p6m.dev/exposed-endpoints: "GET /example,POST /example"
 spec:
   # ============================================
   # ENVIRONMENT VARIABLES
@@ -49,7 +49,7 @@ spec:
     BLOB_PREFIX: "dumps/"
     DB_POOL_SIZE: "5"
     DB_MAX_OVERFLOW: "10"
-    DATABASE_URL: "postgresql+asyncpg://$(TEST_APP_DB_USERNAME):$(TEST_APP_DB_PASSWORD)@$(TEST_APP_DB_HOST):$(TEST_APP_DB_PORT)/$(TEST_APP_DB_DBNAME)"
+    DATABASE_URL: "$(TEST_APP_DB_URI)"
 
   # ============================================
   # DEPLOYMENT
