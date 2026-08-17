@@ -45,7 +45,8 @@ spec:
   # every env var it inferred so the user can audit before flipping them on.
   config:
     # Detected by Cortex — set values before deploying.
-    BLOB_CONTAINER: ""
+    BLOB_ACCOUNT_URL: "https://platform4fa316c7.blob.core.windows.net"
+    BLOB_CONTAINER: "test-app-data"
     BLOB_PREFIX: "dumps/"
     DB_POOL_SIZE: "5"
     DB_MAX_OVERFLOW: "10"
