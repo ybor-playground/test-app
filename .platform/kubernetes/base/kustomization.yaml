@@ -6,6 +6,8 @@ kind: Kustomization
 
 resources:
   - application.yaml
+  - blobstorage.yaml
+  - identityroleassignment.yaml
 
 configurations:
   - application_customizations.yaml
