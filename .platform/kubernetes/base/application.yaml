@@ -106,6 +106,8 @@ spec:
       resourceName: test-app-db
       provider: cnpg
       scope: Private
+      parameters:
+        dbName: appdb
 
   # ============================================
   # AUTOSCALING (HPA + KEDA)
