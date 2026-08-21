@@ -1,0 +1,6 @@
+# Kustomize configuration for PlatformApplication
+# This tells Kustomize how to handle image references in PlatformApplication
+
+images:
+  - path: spec/deployment/image
+    kind: PlatformApplication
