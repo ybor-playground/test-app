@@ -1,0 +1,70 @@
+# CI workflow: Promote a release to another environment
+# Source of truth: p6m-actions/* action.yml interfaces
+# Variables: test-app
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to promote (e.g., v1.2.3)'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - stg
+          - prd
+        default: stg
+
+permissions:
+  contents: write
+
+name: Promote
+
+run-name: Promote ${{ inputs.tag }} to ${{ inputs.environment }} by @${{ github.triggering_actor }}
+
+env:
+  IMAGE_NAME: test-app
+
+jobs:
+  promote:
+    name: Promote Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download release digest
+        id: release
+        run: |
+          gh release download "${{ inputs.tag }}" --pattern "digest.txt" --output digest.txt
+          DIGEST=$(cat digest.txt)
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+          echo "Promoting digest: $DIGEST"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy to ${{ inputs.environment }}
+        uses: p6m-actions/platform-application-manifest-dispatch@v1
+        with:
+          repository: ${{ github.repository }}
+          image-name: ${{ env.IMAGE_NAME }}
+          environment: ${{ inputs.environment }}
+          digest: ${{ steps.release.outputs.digest }}
+          update-manifest-token: ${{ secrets.P6M_UPDATE_MANIFEST_TOKEN }}
+          platform-dispatch-url: ${{ vars.P6M_PLATFORM_DISPATCH_URL }}
+          directory-name: test-app
+          resource-base-path: .platform/kubernetes
+
+      - name: Update release notes
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ inputs.tag }}
+          allowUpdates: true
+          omitBody: false
+          appendBody: true
+          body: |
+            ---
+            Promoted to **${{ inputs.environment }}** by @${{ github.triggering_actor }} on ${{ github.event.repository.updated_at }}
