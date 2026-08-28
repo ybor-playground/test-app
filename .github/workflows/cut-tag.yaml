@@ -1,0 +1,129 @@
+# CI workflow: Tag & release to production (Python UV)
+# Source of truth: p6m-actions/* action.yml interfaces
+# Variables: test-app, 3.11
+
+on:
+  workflow_dispatch:
+    inputs:
+      version-level:
+        description: 'Version bump level'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+  id-token: write
+
+name: Tag & Release
+
+run-name: Cut ${{ inputs.version-level }} tag by @${{ github.triggering_actor }}
+
+env:
+  DOCKER_REGISTRY: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+  DOCKER_REPOSITORY: ${{ vars.P6M_ARTIFACTORY_PROJECT }}-docker-local/applications
+  IMAGE_NAME: test-app
+
+jobs:
+  tag_and_release:
+    name: Tag & Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for tag-based versioning
+
+      - name: Setup Python and uv
+        uses: p6m-actions/python-uv-setup@v1
+        with:
+          python-version: "3.11"
+
+      - name: Login to Python Repository
+        uses: p6m-actions/python-uv-repository-login@v1
+        with:
+          credentials: |
+            artifactory=${{ secrets.P6M_ARTIFACTORY_USERNAME }}:${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      # Tag-derived versioning: compute next version from existing git tags.
+      # No commits pushed back to main — eliminates race conditions.
+      - name: Tag Version
+        id: version-tag
+        run: |
+          LEVEL="${{ inputs.version-level }}"
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            case "$LEVEL" in
+              major) NEW_VERSION="1.0.0" ;;
+              minor) NEW_VERSION="0.1.0" ;;
+              *)     NEW_VERSION="0.1.0" ;;
+            esac
+          else
+            CURRENT="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            case "$LEVEL" in
+              major) NEW_VERSION="$((MAJOR + 1)).0.0" ;;
+              minor) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+              *)     NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            esac
+          fi
+
+          TAG="v$NEW_VERSION"
+          echo "New version: $NEW_VERSION (from ${LATEST_TAG:-none}, bump: $LEVEL)"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Build Python Application
+        uses: p6m-actions/python-uv-build@v1
+        with:
+          run-test: "false"
+
+      - name: Login to Docker Repository
+        uses: p6m-actions/docker-repository-login@v1
+        with:
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+          username: ${{ secrets.P6M_ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Build and Publish Docker Image
+        id: docker-publish
+        uses: p6m-actions/python-uv-docker-publish@v1
+        with:
+          image-name: test-app-server
+          image-tag: ${{ steps.version-tag.outputs.version }}
+          registry: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+
+      - name: Publish to Python Repository
+        uses: p6m-actions/python-uv-repository-publish@v1
+        with:
+          repositories: artifactory
+
+      - name: Create GitHub Release
+        uses: p6m-actions/github-release-create@v1
+        with:
+          tag: ${{ steps.version-tag.outputs.tag }}
+          digest: ${{ steps.docker-publish.outputs.image-digest }}
+          body: |
+            Application version: `${{ steps.version-tag.outputs.version }}`
+            Docker image digest: `${{ steps.docker-publish.outputs.image-digest }}`
+
+      - name: Deploy to Production
+        uses: p6m-actions/platform-application-manifest-dispatch@v1
+        with:
+          repository: ${{ github.repository }}
+          image-name: ${{ env.IMAGE_NAME }}
+          environment: "prd"
+          digest: ${{ steps.docker-publish.outputs.image-digest }}
+          update-manifest-token: ${{ secrets.P6M_UPDATE_MANIFEST_TOKEN }}
+          platform-dispatch-url: ${{ vars.P6M_PLATFORM_DISPATCH_URL }}
+          directory-name: test-app
+          resource-base-path: .platform/kubernetes
