@@ -136,7 +136,9 @@ spec:
   networking:
     ingress:
       enabled: true
-      oidc: false
+      # true selects the public-oidc gateway; false selects public-open,
+      # which serves the app to the internet with no authentication.
+      oidc: true
       # type: istio
       # hostnames:
       #   - test-app.region.env.org.p6m.run
