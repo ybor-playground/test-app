@@ -1,0 +1,107 @@
+# CI workflow: Build & deploy to dev (Python UV)
+# Source of truth: p6m-actions/* action.yml interfaces
+# Variables: test-app, 3.11
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+name: Build
+
+env:
+  DOCKER_REGISTRY: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+  DOCKER_REPOSITORY: ${{ vars.P6M_ARTIFACTORY_PROJECT }}-docker-local/applications
+  IMAGE_NAME: test-app
+
+jobs:
+  build_and_deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    if: github.actor != 'p6m-ybor[bot]'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history needed for tag-based versioning
+
+      - name: Setup Python and uv
+        uses: p6m-actions/python-uv-setup@v1
+        with:
+          python-version: "3.11"
+
+      - name: Login to Python Repository
+        uses: p6m-actions/python-uv-repository-login@v1
+        with:
+          credentials: |
+            artifactory=${{ secrets.P6M_ARTIFACTORY_USERNAME }}:${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      # Tag-derived versioning: compute next patch from existing git tags.
+      # No commits pushed back to main — eliminates race conditions between
+      # concurrent builds. The tag is the version source of truth.
+      - name: Tag Version
+        id: version-tag
+        run: |
+          LATEST_TAG=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_VERSION="0.1.0"
+          else
+            CURRENT="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+            NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          fi
+
+          TAG="v$NEW_VERSION"
+          echo "New version: $NEW_VERSION (from ${LATEST_TAG:-none})"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Build Python Application
+        uses: p6m-actions/python-uv-build@v1
+        with:
+          run-test: "false"
+
+      - name: Login to Docker Repository
+        uses: p6m-actions/docker-repository-login@v1
+        with:
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+          username: ${{ secrets.P6M_ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Build and Publish Docker Image
+        id: docker-publish
+        uses: p6m-actions/python-uv-docker-publish@v1
+        with:
+          image-name: test-app-server
+          image-tag: ${{ github.sha }}
+          registry: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_REPOSITORY }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+
+      - name: Create GitHub Release
+        uses: p6m-actions/github-release-create@v1
+        with:
+          tag: ${{ steps.version-tag.outputs.tag }}
+          digest: ${{ steps.docker-publish.outputs.image-digest }}
+          body: |
+            Application version: `${{ steps.version-tag.outputs.version }}`
+            Docker image digest: `${{ steps.docker-publish.outputs.image-digest }}`
+
+      - name: Update Application Manifest
+        uses: p6m-actions/platform-application-manifest-dispatch@v1
+        with:
+          repository: ${{ github.repository }}
+          image-name: ${{ env.IMAGE_NAME }}
+          environment: "dev"
+          digest: ${{ steps.docker-publish.outputs.image-digest }}
+          update-manifest-token: ${{ secrets.P6M_UPDATE_MANIFEST_TOKEN }}
+          platform-dispatch-url: ${{ vars.P6M_PLATFORM_DISPATCH_URL }}
+          directory-name: test-app
+          resource-base-path: .platform/kubernetes
