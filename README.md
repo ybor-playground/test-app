@@ -33,8 +33,13 @@ This repository is the fixture for testing the platform deployment server end to
 It deliberately contains **application code only** — no Dockerfile, no CI workflows and
 no Kubernetes manifests. Those are generated.
 
-The procedure lives with the server that generates them:
-`ybor-playground/cortex-deploy` → `docs/e2e-test.md`
+The procedure lives with the server that generates them, in
+`ybor-playground/cortex-deploy`:
+
+| You are | Follow |
+|---|---|
+| A Ybor employee | [`docs/e2e-test-internal.md`](https://github.com/ybor-playground/cortex-deploy/blob/main/docs/e2e-test-internal.md) |
+| Anyone else | [`docs/e2e-test-external.md`](https://github.com/ybor-playground/cortex-deploy/blob/main/docs/e2e-test-external.md) |
 
 One value the tool cannot infer from source, so you will be asked for it:
 
