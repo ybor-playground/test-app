@@ -27,6 +27,24 @@ Hello World CRUD app built with FastAPI, PostgreSQL, and Azure Blob Storage.
 | `DELETE` | `/items/{id}` | Delete an item |
 | `POST` | `/items/dump` | Dump all items as CSV to Azure Blob Storage |
 
+## Deploying this app
+
+This repository is the fixture for testing the platform deployment server end to end.
+It deliberately contains **application code only** — no Dockerfile, no CI workflows and
+no Kubernetes manifests. Those are generated.
+
+The procedure lives with the server that generates them:
+`ybor-playground/cortex-deploy` → `docs/e2e-test.md`
+
+One value the tool cannot infer from source, so you will be asked for it:
+
+| Variable | Answer | Why |
+|---|---|---|
+| `BLOB_CONTAINER` | `exports` | `dumps/` is the *prefix*, set separately — answering `dumps` produces `dumps/dumps/file.csv` |
+
+If deployment artifacts are present in your checkout, a previous test left them. Reset
+before starting; the procedure covers it.
+
 ## Local Testing
 
 ### Prerequisites
