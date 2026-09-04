@@ -1,0 +1,56 @@
+# Version control
+.git
+.gitignore
+
+# Local environment files. The Dockerfile does `COPY . .`, so an uncommitted
+# .env on a developer machine would be baked into an image layer permanently.
+# CI never has one (it is gitignored), which is exactly why this is easy to miss.
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Python bytecode and virtual environments
+__pycache__
+*.py[cod]
+*.pyo
+.venv
+venv
+
+# Build artifacts
+dist
+build
+*.egg-info
+
+# Testing
+tests
+test
+.pytest_cache
+.tox
+htmlcov
+coverage
+.coverage
+conftest.py
+
+# Linting and type checking
+.mypy_cache
+.ruff_cache
+
+# CI/CD and platform config
+.github
+.platform
+
+# Documentation
+docs
+doc
+
+# IDE
+.vscode
+.idea
+
+# Misc
+node_modules
+scripts
+Dockerfile
+.dockerignore
