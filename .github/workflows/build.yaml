@@ -1,0 +1,110 @@
+name: Build
+
+# One build per logical change (YP6M-3662): the pull_request run tests the MERGE ref — what
+# main becomes — and the push run on main owns the release tail. Bare `pull_request:` would
+# decode as an absent key to the standards suite, hence the explicit `{}`.
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  # A manual release IS this pipeline at a chosen version level (YP6M-3663): dispatching with
+  # minor/major runs the identical cut -> build -> image -> release -> dev-dispatch tail every
+  # merge runs, so the release is promotable by construction. The tag-only cut-tag.yaml retired.
+  workflow_dispatch:
+    inputs:
+      version-level:
+        description: "Version bump level (merges always bump patch)"
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  IMAGE_NAME: test-app
+  APPLICATION_NAME: test-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: p6m-actions/python-uv-setup@v1
+
+      - name: Login to Python Repository
+        uses: p6m-actions/python-uv-repository-login@v1
+        with:
+          credentials: |
+            artifactory=${{ secrets.P6M_ARTIFACTORY_USERNAME }}:${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Cut Version
+        if: github.ref_name == 'main'
+        id: cut-patch
+        uses: p6m-actions/python-uv-cut-tag@v1
+        with:
+          version-level: ${{ inputs.version-level || 'patch' }}
+
+      - name: Build Python Application
+        uses: p6m-actions/python-uv-build@v1
+
+      - name: Login to Artifactory Container Registry
+        if: github.ref_name == 'main'
+        uses: p6m-actions/docker-repository-login@v1
+        with:
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+          username: ${{ secrets.P6M_ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: p6m-actions/docker-buildx-setup@v1
+
+      - name: Build and Publish Docker Image
+        id: docker-publish
+        uses: p6m-actions/docker-buildx-build-publish@v1
+        with:
+          dockerfile-path: .platform/docker/prd/Dockerfile
+          image-name: ${{ env.IMAGE_NAME }}
+          image-tag: ${{ steps.cut-patch.outputs.tag || format('dev-{0}', github.sha) }}
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}/${{ vars.P6M_ARTIFACTORY_PROJECT }}-docker-local/applications
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.ref_name == 'main' }}
+          skip-setup: true
+          builder-name: ${{ steps.buildx.outputs.name }}
+
+      - name: Make Artifacts
+        if: github.ref_name == 'main'
+        run: |
+          echo '${{ steps.docker-publish.outputs.image-digest }}' | tee digest.txt
+
+      - name: Create Github release
+        if: github.ref_name == 'main'
+        uses: ncipollo/release-action@v1
+        with:
+          name: Version ${{ steps.cut-patch.outputs.version }}
+          tag: ${{ steps.cut-patch.outputs.tag }}
+          makeLatest: true
+          artifacts: "digest.txt"
+          removeArtifacts: true
+          generateReleaseNotes: true
+          body: |
+            Application version: `${{ steps.cut-patch.outputs.version }}`
+            Docker image digest: `${{ steps.docker-publish.outputs.image-digest }}`
+
+      - name: Update Application Manifest
+        if: github.ref_name == 'main'
+        uses: p6m-actions/platform-application-manifest-dispatch@v1
+        with:
+          repository: ${{ github.repository }}
+          image-name: ${{ env.IMAGE_NAME }}
+          environment: "dev"
+          digest: ${{ steps.docker-publish.outputs.image-digest }}
+          update-manifest-token: ${{ secrets.P6M_UPDATE_MANIFEST_TOKEN }}
+          platform-dispatch-url: ${{ vars.P6M_PLATFORM_DISPATCH_URL }}
+          directory-name: ${{ env.APPLICATION_NAME }}
