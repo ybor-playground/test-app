@@ -1,0 +1,190 @@
+name: Build
+
+# One build per logical change (YP6M-3662): the pull_request run tests the MERGE ref — what
+# main becomes — and the push run on main owns the release tail. Bare `pull_request:` would
+# decode as an absent key to the standards suite, hence the explicit `{}`.
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  # A manual release IS this pipeline at a chosen version level (YP6M-3663): dispatching with
+  # minor/major runs the identical cut -> build -> image -> release -> dev-dispatch tail every
+  # merge runs, so the release is promotable by construction. The tag-only cut-tag.yaml retired.
+  workflow_dispatch:
+    inputs:
+      version-level:
+        description: "Version bump level (merges always bump patch)"
+        required: false
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  id-token: write
+
+env:
+  IMAGE_NAME: test-app
+  APPLICATION_NAME: test-app
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.cut-patch.outputs.version }}
+      tag: ${{ steps.cut-patch.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: p6m-actions/python-uv-setup@v1
+
+      - name: Login to Python Repository
+        uses: p6m-actions/python-uv-repository-login@v1
+        with:
+          credentials: |
+            artifactory=${{ secrets.P6M_ARTIFACTORY_USERNAME }}:${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Cut Version
+        if: github.ref_name == 'main'
+        id: cut-patch
+        uses: p6m-actions/python-uv-cut-tag@v1
+        with:
+          version-level: ${{ inputs.version-level || 'patch' }}
+
+      - name: Build Python Application
+        uses: p6m-actions/python-uv-build@v1
+
+  # Which platforms exist is the ORG's decision (YP6M-3779): P6M_IMAGE_PLATFORMS, an org-level
+  # GitHub variable, defaults to both. Each platform builds on its NATIVE runner — never qemu:
+  # emulated arm64 segfaults Node and runs compiled languages 10-50x slow (measured 2026-09-14
+  # on the first retrofit tests). An org without arm runners sets the variable to linux/amd64.
+  platforms:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Resolve platform matrix
+        id: resolve
+        run: |
+          PLATFORMS="${{ vars.P6M_IMAGE_PLATFORMS || 'linux/amd64,linux/arm64' }}"
+          MATRIX=$(jq -cn --arg p "$PLATFORMS" '
+            [{platform: "linux/amd64", arch: "amd64", runner: "ubuntu-latest"},
+             {platform: "linux/arm64", arch: "arm64", runner: "ubuntu-24.04-arm"}]
+            | map(select(. as $e | ($p | split(",") | map(gsub("\\s"; ""))) | index($e.platform)))')
+          echo "Platforms: $PLATFORMS -> $MATRIX"
+          if [ "$(echo "$MATRIX" | jq length)" = "0" ]; then
+            echo "::error::P6M_IMAGE_PLATFORMS ('$PLATFORMS') selects no known platform"
+            exit 1
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Image (${{ matrix.platform }})
+    needs: [build, platforms]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.platforms.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Artifactory Container Registry
+        if: github.ref_name == 'main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+          username: ${{ secrets.P6M_ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      # PR runs build (native, both platforms) without pushing; main pushes BY DIGEST — the
+      # publish job assembles the digests into one multi-arch manifest under the version tag.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: .platform/docker/prd/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ vars.P6M_ARTIFACTORY_HOSTNAME }}/${{ vars.P6M_ARTIFACTORY_PROJECT }}-docker-local/applications/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.ref_name == 'main' }}
+
+      - name: Export digest
+        if: github.ref_name == 'main'
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          echo "${{ steps.build.outputs.digest }}" > "$RUNNER_TEMP/digests/digest-${{ matrix.arch }}.txt"
+
+      - name: Upload digest
+        if: github.ref_name == 'main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    if: github.ref_name == 'main'
+    needs: [build, image]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
+
+      - name: Login to Artifactory Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ vars.P6M_ARTIFACTORY_HOSTNAME }}
+          username: ${{ secrets.P6M_ARTIFACTORY_USERNAME }}
+          password: ${{ secrets.P6M_ARTIFACTORY_IDENTITY_TOKEN }}
+
+      - name: Assemble the multi-arch manifest
+        id: manifest
+        run: |
+          REPO="${{ vars.P6M_ARTIFACTORY_HOSTNAME }}/${{ vars.P6M_ARTIFACTORY_PROJECT }}-docker-local/applications/${{ env.IMAGE_NAME }}"
+          TAG="${{ needs.build.outputs.tag }}"
+          SOURCES=$(cat "$RUNNER_TEMP"/digests/digest-*.txt | xargs -n1 printf "${REPO}@%s ")
+          docker buildx imagetools create -t "${REPO}:${TAG}" ${SOURCES}
+          # The manifest list's digest IS the sha256 of its canonical bytes — computed from
+          # --raw rather than a Go-template --format, whose double-brace syntax reads as an
+          # unrendered template marker to both ATL and the standards suite.
+          DIGEST="sha256:$(docker buildx imagetools inspect --raw "${REPO}:${TAG}" | sha256sum | cut -d' ' -f1)"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "Multi-arch manifest: ${REPO}:${TAG} @ ${DIGEST}"
+
+      - name: Make Artifacts
+        run: |
+          echo '${{ steps.manifest.outputs.digest }}' | tee digest.txt
+
+      - name: Create Github release
+        uses: ncipollo/release-action@v1
+        with:
+          name: Version ${{ needs.build.outputs.version }}
+          tag: ${{ needs.build.outputs.tag }}
+          makeLatest: true
+          artifacts: "digest.txt"
+          removeArtifacts: true
+          generateReleaseNotes: true
+          body: |
+            Application version: `${{ needs.build.outputs.version }}`
+            Docker image digest: `${{ steps.manifest.outputs.digest }}`
+
+      - name: Update Application Manifest
+        uses: p6m-actions/platform-application-manifest-dispatch@v1
+        with:
+          repository: ${{ github.repository }}
+          image-name: ${{ env.IMAGE_NAME }}
+          environment: "dev"
+          digest: ${{ steps.manifest.outputs.digest }}
+          update-manifest-token: ${{ secrets.P6M_UPDATE_MANIFEST_TOKEN }}
+          platform-dispatch-url: ${{ vars.P6M_PLATFORM_DISPATCH_URL }}
+          directory-name: ${{ env.APPLICATION_NAME }}
