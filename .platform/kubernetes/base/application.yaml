@@ -78,8 +78,8 @@ spec:
   # Synced via External Secrets Operator from Azure Key Vault / AWS Secrets Manager
   # Driven by detect_secrets_usage — needs_secrets=true emits the block active;
   # otherwise it stays commented so the docs survive in-place.
-    secrets:
-     - name: test-app-secrets
+  secrets:
+    - name: test-app-secrets
 
   # ============================================
   # CLOUD RESOURCES (access policies only)
