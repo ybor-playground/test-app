@@ -161,6 +161,7 @@ spec:
 
     # Outbound: services this app can call
     outbound:
-      - hostname: ybor-mcp-registry-dev.postgres.database.azure.com
-        port: 5432
-        protocol: TCP
+      external:
+        - host: ybor-mcp-registry-dev.postgres.database.azure.com
+          port: 5432
+          protocol: TCP
